@@ -9,6 +9,8 @@ import tabulate
 import time
 from datetime import datetime, timedelta
 from bs4 import BeautifulSoup
+from bs4 import SoupStrainer
+from Flight import Flight
 
 # Airports that Southwest operates out of
 cities = ['ABQ', 'ALB', 'AMA', 'ATL', 'AUA', 'AUS', 'BDL', 'BHM', 'BNA', 'BOI', 'BOS', 'BOT', 'BUF', 'BUR',
@@ -20,6 +22,58 @@ cities = ['ABQ', 'ALB', 'AMA', 'ATL', 'AUA', 'AUS', 'BDL', 'BHM', 'BNA', 'BOI', 
           'RDU', 'RIC', 'RNO', 'ROC', 'RSW', 'SAN', 'SAT', 'SDF', 'SEA', 'SFC', 'SFO', 'SJC', 'SJD', 'SJO',
           'SJU', 'SLC', 'SMF', 'SNA', 'STL', 'TPA', 'TUL', 'TUS', 'WDC']
 
+def search(date, depart, arrive):
+    flights = []
+    br = mechanize.Browser()
+
+    # Cookie Jar
+    cj = cookielib.LWPCookieJar()
+    br.set_cookiejar(cj)
+
+    # Browser options
+    br.set_handle_equiv(True)
+    br.set_handle_redirect(True)
+    br.set_handle_referer(True)
+    br.set_handle_robots(False)
+    br.set_handle_refresh(mechanize._http.HTTPRefreshProcessor(), max_time=1)
+    # You can set your own personal user agent here if you want; doesn't really matter
+    br.addheaders = [('User-agent', 'Mozilla/5.0 (X11; U; Linux i686; en-US; rv:1.9.0.1) Gecko/2008071615 Fedora/3.0.1-1.fc9 Firefox/3.0.1')]
+
+    br.open("http://www.southwest.com/flight/shortcut/low-fare-search.html")
+    br.select_form(name="lowFareFinderForm")
+
+    br["twoWayTrip"] = ["false"]
+    br["returnAirport"] = [""]
+    br["originAirport"] = [depart]
+    br["destinationAirport"] = [arrive]
+    br["outboundDateString"] = ['08/01/2017',] #'`month` + '/' + `date` + '/2017'
+    # br["returnDateString"] = ['08/31/2017',]
+    br["adultPassengerCount"] = ["2"]
+
+    response = br.submit().read()
+    page = BeautifulSoup(response, 'html.parser')
+    cells = page.findAll("td", { "class" : "day-cell" })
+    for cell in cells:
+        input = cell.findAll("input")[0]
+        spans = cell.findAll("span")
+        date = input["value"]
+        month = ''
+        day = 0
+        fare = 0
+        type = ''
+        for span in spans:
+            if 'sr-only' in span['class']:
+                month = span.string
+            if 'day' in span['class']:
+                day = span.string
+            if 'day-fare' in span['class']:
+                fare = span.contents[2]
+            if 'small' in span['class'] and 'var' in span['class']:
+                type = span.string
+        flight = Flight(depart, arrive, month, fare, '$', type, date)
+        flights.append(flight)
+
+    return flights
 
 def page_grab(date, depart, arrive):
     br = mechanize.Browser()
@@ -126,7 +180,7 @@ def pretty_print_flights(flights, sort, lowest_fare, max_stops, reverse, verbose
 parser = argparse.ArgumentParser()
 parser.add_argument('-a', '--arrival-cities', action='store', nargs="+", required=True)
 parser.add_argument('-d', '--departure-cities', action='store', nargs="+", required=True)
-parser.add_argument('-t', '--dates', action='store', nargs="+", required=True)
+parser.add_argument('-t', '--dates', action='store', nargs="+", required=False)
 parser.add_argument('-s', '--sort', action='store', choices=["flight_num", "depart", "arrive", "fares",
                     "num_stops", "flight_time"], help="Choose which column you want to sort results by.")
 parser.add_argument('-r', '--reverse', action='store_true', help="Reverse sort order for key of choice.",
@@ -155,11 +209,12 @@ else:
     options = []
     i = 0
     possible = len(args.dates) * len(args.departure_cities) * len(args.arrival_cities)
-
+    flights = [];
     for route in itertools.product(args.dates, args.departure_cities, args.arrival_cities):
         try:
-            page = page_grab(*route)
-            options += page_parse(page)
+            fs = search(*route)
+            flights.extend(fs)
+            # options += parse_results(page)
             i += 1
             print "Processed %i/%i" % (i, possible)
             if i < possible:
@@ -168,6 +223,9 @@ else:
         except Exception as e:
             print e
             continue
+    flights.sort(key=lambda x: x.fare)
+    for flight in flights:
+        print flight
 
 if args.export_file is not None:
     with open(args.export_file, "w") as f:
