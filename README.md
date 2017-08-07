@@ -38,7 +38,7 @@ Only tested on Linux, but there's no reason it shouldn't work on OS X or Windows
 
 ### Using the script on Linux
 ```
-git clone https://github.com/redfern314/southwest-search.git
+git clone https://github.com/royston/southwest-search.git
 cd southwest-search
 sudo pip install bs4 mechanize tabulate
 python southwest.py -a ARRIVAL_CITIES -d DEPARTURE_CITIES -t DATES
